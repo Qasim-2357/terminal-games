@@ -1,0 +1,12 @@
+# CMake build files
+build/
+
+# Executables
+*.exe
+
+# IDE files
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
