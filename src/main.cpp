@@ -114,6 +114,9 @@ void showTerminalRacer()
     const int minimumCarTop = roadTop + 1;
     const int maximumCarTop = roadBottom - 2;
     int carTop = maximumCarTop;
+    const int obstacleWidth = 3;
+    const int obstacleRow = roadTop + 2;
+    int obstacleLeft = width - obstacleWidth;
 
 #ifndef _WIN32
     termios originalTerminal;
@@ -202,6 +205,12 @@ void showTerminalRacer()
             break;
         }
 
+        --obstacleLeft;
+        if (obstacleLeft + obstacleWidth <= 0)
+        {
+            obstacleLeft = width - obstacleWidth;
+        }
+
         if (!firstFrame)
         {
 #ifdef _WIN32
@@ -243,6 +252,18 @@ void showTerminalRacer()
                 for (int column = 1; column < width; column += 4)
                 {
                     line[column] = '-';
+                }
+            }
+
+            if (row == obstacleRow)
+            {
+                for (int column = 0; column < obstacleWidth; ++column)
+                {
+                    const int obstacleColumn = obstacleLeft + column;
+                    if (obstacleColumn >= 0 && obstacleColumn < width)
+                    {
+                        line[obstacleColumn] = '#';
+                    }
                 }
             }
 
