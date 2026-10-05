@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <string>
 
 #ifdef _WIN32
@@ -73,7 +74,7 @@ void clearTerminal()
 #endif
 }
 
-void showTerminalRacer()
+void showTerminalRacer(int& bestScore)
 {
     int width = 0;
     int height = 0;
@@ -92,8 +93,10 @@ void showTerminalRacer()
         return;
     }
 
-    const int gameHeight = height - 4;
-    if (gameHeight < 5 || width < 7)
+    const int roadTop = 0;
+    const int roadBottom = 11;
+    const int gameHeight = roadBottom + 1;
+    if (height < gameHeight + 5 || width < 7)
     {
         std::cout << "The terminal is too small to display Terminal Racer.\n"
                   << "Press M to return to the main menu: ";
@@ -107,17 +110,21 @@ void showTerminalRacer()
         return;
     }
 
-    const int roadTop = 1;
-    const int roadBottom = gameHeight - 1;
     const int carWidth = 7;
     const int carLeft = (width - carWidth) / 2;
     const int minimumCarTop = roadTop + 1;
     const int maximumCarTop = roadBottom - 2;
-    int carTop = maximumCarTop;
     const int obstacleWidth = 3;
-    const int obstacleRow = roadTop + 2;
-    int obstacleLeft = width - obstacleWidth;
-    int score = 0;
+    const int obstaclePatternRows[8] = {
+        roadTop + 1,
+        roadTop + 2,
+        roadBottom - 2,
+        roadBottom - 1,
+        roadTop + 3,
+        roadBottom - 3,
+        roadTop + 4,
+        roadBottom - 4
+    };
 
 #ifndef _WIN32
     termios originalTerminal;
@@ -156,10 +163,37 @@ void showTerminalRacer()
 #endif
 
     bool playing = true;
-    bool gameOver = false;
-    bool firstFrame = true;
     while (playing)
     {
+        int carTop = maximumCarTop;
+        const int obstacleSpacing = width / 12 > 5 ? width / 12 : 6;
+        int obstacleLeft[8] = {
+            width - obstacleWidth,
+            width + obstacleSpacing,
+            width + obstacleSpacing * 2,
+            width + obstacleSpacing * 3,
+            width + obstacleSpacing * 4,
+            width + obstacleSpacing * 5,
+            width + obstacleSpacing * 6,
+            width + obstacleSpacing * 7
+        };
+        int obstacleRow[8] = {
+            obstaclePatternRows[0],
+            obstaclePatternRows[1],
+            obstaclePatternRows[2],
+            obstaclePatternRows[3],
+            obstaclePatternRows[4],
+            obstaclePatternRows[5],
+            obstaclePatternRows[6],
+            obstaclePatternRows[7]
+        };
+        int score = 0;
+        int activeObstacleCount = 3;
+        bool gameOver = false;
+        bool firstFrame = true;
+
+        while (playing)
+        {
         char input = '\0';
 #ifdef _WIN32
         if (GetAsyncKeyState('M') & 0x8000)
@@ -173,6 +207,10 @@ void showTerminalRacer()
         else if (GetAsyncKeyState('S') & 0x8000)
         {
             input = 's';
+        }
+        else if (gameOver && (GetAsyncKeyState('R') & 0x8000))
+        {
+            input = 'r';
         }
 #else
         fd_set inputSet;
@@ -201,6 +239,10 @@ void showTerminalRacer()
         {
             playing = false;
         }
+        else if (gameOver && (input == 'r' || input == 'R'))
+        {
+            break;
+        }
 
         if (!playing)
         {
@@ -209,23 +251,92 @@ void showTerminalRacer()
 
         if (!gameOver)
         {
-            --obstacleLeft;
-            if (obstacleLeft + obstacleWidth <= 0)
+            int obstacleSpeed = 2;
+            if (score >= 30)
             {
-                obstacleLeft = width - obstacleWidth;
-                ++score;
+                obstacleSpeed = 6;
+            }
+            else if (score >= 20)
+            {
+                obstacleSpeed = 5;
+            }
+            else if (score >= 10)
+            {
+                obstacleSpeed = 4;
+            }
+            else if (score >= 5)
+            {
+                obstacleSpeed = 3;
             }
 
-            const bool horizontalOverlap =
-                carLeft < obstacleLeft + obstacleWidth &&
-                carLeft + carWidth > obstacleLeft;
-            const bool verticalOverlap =
-                obstacleRow >= carTop &&
-                obstacleRow <= carTop + 1;
-
-            if (horizontalOverlap && verticalOverlap)
+            for (int obstacle = 0; obstacle < activeObstacleCount; ++obstacle)
             {
-                gameOver = true;
+                const int previousLeft = obstacleLeft[obstacle];
+                const int movedLeft = previousLeft - obstacleSpeed;
+                const int pathLeft = movedLeft < 0 ? 0 : movedLeft;
+                const bool horizontalPathOverlap =
+                    carLeft < previousLeft + obstacleWidth &&
+                    carLeft + carWidth > pathLeft;
+                const bool verticalOverlap =
+                    obstacleRow[obstacle] >= carTop &&
+                    obstacleRow[obstacle] <= carTop + 1;
+
+                if (horizontalPathOverlap && verticalOverlap)
+                {
+                    gameOver = true;
+                }
+
+                obstacleLeft[obstacle] = movedLeft;
+                if (obstacleLeft[obstacle] + obstacleWidth <= 0)
+                {
+                    int furthestObstacle = width;
+                    for (int other = 0; other < activeObstacleCount; ++other)
+                    {
+                        if (other != obstacle && obstacleLeft[other] > furthestObstacle)
+                        {
+                            furthestObstacle = obstacleLeft[other];
+                        }
+                    }
+
+                    obstacleLeft[obstacle] = furthestObstacle + obstacleSpacing;
+                    obstacleRow[obstacle] =
+                        obstaclePatternRows[(obstacle + score) % 8];
+                    ++score;
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        std::ofstream bestScoreFile("best_score.dat", std::ios::trunc);
+                        if (bestScoreFile)
+                        {
+                            bestScoreFile << bestScore;
+                        }
+                    }
+                }
+
+                if (gameOver)
+                {
+                    break;
+                }
+            }
+
+            const int desiredObstacleCount =
+                score >= 20 ? 5 : (score >= 10 ? 4 : 3);
+            while (activeObstacleCount < desiredObstacleCount)
+            {
+                int furthestObstacle = width;
+                for (int obstacle = 0; obstacle < activeObstacleCount; ++obstacle)
+                {
+                    if (obstacleLeft[obstacle] > furthestObstacle)
+                    {
+                        furthestObstacle = obstacleLeft[obstacle];
+                    }
+                }
+
+                obstacleLeft[activeObstacleCount] =
+                    furthestObstacle + obstacleSpacing;
+                obstacleRow[activeObstacleCount] =
+                    obstaclePatternRows[activeObstacleCount];
+                ++activeObstacleCount;
             }
         }
 
@@ -273,6 +384,21 @@ void showTerminalRacer()
         std::cout << scoreboard;
         std::cout.flush();
 
+#ifdef _WIN32
+        COORD bestScorePosition = {0, 2};
+        SetConsoleCursorPosition(console, bestScorePosition);
+#else
+        std::cout << "\x1B[3;1H";
+#endif
+        std::string bestScoreboard(width, ' ');
+        const std::string bestScoreText = "Best: " + std::to_string(bestScore);
+        for (int column = 0; column < width && column < static_cast<int>(bestScoreText.length()); ++column)
+        {
+            bestScoreboard[column] = bestScoreText[column];
+        }
+        std::cout << bestScoreboard;
+        std::cout.flush();
+
         for (int row = 0; row < gameHeight; ++row)
         {
             std::string line(width, ' ');
@@ -289,14 +415,17 @@ void showTerminalRacer()
                 }
             }
 
-            if (row == obstacleRow)
+            for (int obstacle = 0; obstacle < activeObstacleCount; ++obstacle)
             {
                 for (int column = 0; column < obstacleWidth; ++column)
                 {
-                    const int obstacleColumn = obstacleLeft + column;
+                    const int obstacleColumn = obstacleLeft[obstacle] + column;
                     if (obstacleColumn >= 0 && obstacleColumn < width)
                     {
-                        line[obstacleColumn] = '#';
+                        if (row == obstacleRow[obstacle])
+                        {
+                            line[obstacleColumn] = '#';
+                        }
                     }
                 }
             }
@@ -312,7 +441,7 @@ void showTerminalRacer()
 
             if (gameOver)
             {
-                const int popupRow = (roadTop + roadBottom) / 2 - 1;
+                const int popupRow = (roadTop + roadBottom) / 2 - 2;
                 std::string gameOverText;
 
                 if (row == popupRow)
@@ -325,7 +454,15 @@ void showTerminalRacer()
                 }
                 else if (row == popupRow + 2)
                 {
-                    gameOverText = "Press M for Main Menu";
+                    gameOverText = "Best: " + std::to_string(bestScore);
+                }
+                else if (row == popupRow + 3)
+                {
+                    gameOverText = "R: Play Again";
+                }
+                else if (row == popupRow + 4)
+                {
+                    gameOverText = "M: Main Menu";
                 }
 
                 if (!gameOverText.empty())
@@ -374,6 +511,7 @@ void showTerminalRacer()
 #else
         usleep(50000);
 #endif
+        }
     }
 
 #ifndef _WIN32
@@ -411,6 +549,16 @@ void showTerminalRacer()
 int main()
 {
     char choice = '\0';
+    int bestScore = 0;
+    std::ifstream bestScoreFile("best_score.dat");
+    int loadedBestScore = 0;
+    std::string extraValue;
+    if (bestScoreFile >> loadedBestScore &&
+        loadedBestScore >= 0 &&
+        !(bestScoreFile >> extraValue))
+    {
+        bestScore = loadedBestScore;
+    }
 
     while (choice != 'q' && choice != 'Q')
     {
@@ -425,7 +573,7 @@ int main()
 
         if (choice == '1')
         {
-            showTerminalRacer();
+            showTerminalRacer(bestScore);
             choice = '\0';
         }
     }
