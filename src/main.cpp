@@ -107,7 +107,7 @@ void showTerminalRacer()
         return;
     }
 
-    const int roadTop = gameHeight / 3;
+    const int roadTop = 1;
     const int roadBottom = gameHeight - 1;
     const int carWidth = 7;
     const int carLeft = (width - carWidth) / 2;
@@ -155,6 +155,7 @@ void showTerminalRacer()
 #endif
 
     bool playing = true;
+    bool gameOver = false;
     bool firstFrame = true;
     while (playing)
     {
@@ -187,11 +188,11 @@ void showTerminalRacer()
         }
 #endif
 
-        if ((input == 'w' || input == 'W') && carTop > minimumCarTop)
+        if (!gameOver && (input == 'w' || input == 'W') && carTop > minimumCarTop)
         {
             --carTop;
         }
-        else if ((input == 's' || input == 'S') && carTop < maximumCarTop)
+        else if (!gameOver && (input == 's' || input == 'S') && carTop < maximumCarTop)
         {
             ++carTop;
         }
@@ -205,10 +206,25 @@ void showTerminalRacer()
             break;
         }
 
-        --obstacleLeft;
-        if (obstacleLeft + obstacleWidth <= 0)
+        if (!gameOver)
         {
-            obstacleLeft = width - obstacleWidth;
+            --obstacleLeft;
+            if (obstacleLeft + obstacleWidth <= 0)
+            {
+                obstacleLeft = width - obstacleWidth;
+            }
+
+            const bool horizontalOverlap =
+                carLeft < obstacleLeft + obstacleWidth &&
+                carLeft + carWidth > obstacleLeft;
+            const bool verticalOverlap =
+                obstacleRow >= carTop &&
+                obstacleRow <= carTop + 1;
+
+            if (horizontalOverlap && verticalOverlap)
+            {
+                gameOver = true;
+            }
         }
 
         if (!firstFrame)
@@ -267,13 +283,29 @@ void showTerminalRacer()
                 }
             }
 
-            if (row == carTop && carLeft >= 0 && carLeft + carWidth <= width)
+            if (!gameOver && row == carTop && carLeft >= 0 && carLeft + carWidth <= width)
             {
                 line.replace(carLeft, carWidth, " /---\\ ");
             }
-            else if (row == carTop + 1 && carLeft >= 0 && carLeft + carWidth <= width)
+            else if (!gameOver && row == carTop + 1 && carLeft >= 0 && carLeft + carWidth <= width)
             {
                 line.replace(carLeft, carWidth, "|_O_O_|");
+            }
+
+            if (gameOver)
+            {
+                const int popupRow = (roadTop + roadBottom) / 2;
+                const std::string gameOverText =
+                    row == popupRow ? "GAME OVER" : "Press M for Main Menu";
+
+                if (row == popupRow || row == popupRow + 1)
+                {
+                    const int textLeft = (width - static_cast<int>(gameOverText.length())) / 2;
+                    if (textLeft >= 0 && textLeft + static_cast<int>(gameOverText.length()) <= width)
+                    {
+                        line.replace(textLeft, gameOverText.length(), gameOverText);
+                    }
+                }
             }
 
 #ifdef _WIN32
@@ -292,7 +324,7 @@ void showTerminalRacer()
         std::cout << "\x1B[" << gameHeight + 3 << ";1H";
 #endif
         std::string controls(width, ' ');
-        const std::string controlsText = "W: Up  S: Down  M: Main Menu";
+        const std::string controlsText = gameOver ? "" : "W: Up  S: Down  M: Main Menu";
         for (int column = 0; column < width && column < static_cast<int>(controlsText.length()); ++column)
         {
             controls[column] = controlsText[column];
