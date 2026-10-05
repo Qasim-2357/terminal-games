@@ -1,5 +1,6 @@
 # CMake build files
 build/
+release/
 
 # Executables
 *.exe

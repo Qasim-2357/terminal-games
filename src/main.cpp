@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <algorithm>
 
 #ifdef _WIN32
 #include <conio.h>
@@ -35,6 +36,11 @@ bool getTerminalSize(int& width, int& height)
 #endif
 
     return width > 0 && height > 0;
+}
+
+void printColoredText(const std::string& text, const char* color)
+{
+    std::cout << color << text << "\x1B[0m";
 }
 
 constexpr int getObstacleSpeed(int score)
@@ -190,6 +196,8 @@ void showTerminalRacer(int& bestScore, bool& quitRequested)
 
     const int carWidth = 7;
     const int carLeft = (width - carWidth) / 2;
+    const int visualCarWidth = 18;
+    const int visualCarLeft = carLeft - (visualCarWidth - carWidth) / 2;
     const int minimumCarTop = roadTop + 1;
     const int maximumCarTop = roadBottom - 2;
     const int obstacleWidth = 3;
@@ -475,66 +483,90 @@ void showTerminalRacer(int& bestScore, bool& quitRequested)
         }
         firstFrame = false;
 
-        std::string title(width, ' ');
-        const std::string titleText = "TERMINAL RACER";
-        for (int column = 0; column < width && column < static_cast<int>(titleText.length()); ++column)
-        {
-            title[column] = titleText[column];
-        }
-
 #ifdef _WIN32
         HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
-        COORD titlePosition = {0, 0};
-        SetConsoleCursorPosition(console, titlePosition);
-#else
-        std::cout << "\x1B[1;1H";
-#endif
-        std::cout << title;
-        std::cout.flush();
-
-#ifdef _WIN32
-        COORD scorePosition = {0, 1};
-        SetConsoleCursorPosition(console, scorePosition);
-#else
-        std::cout << "\x1B[2;1H";
-#endif
-        std::string scoreboard(width, ' ');
-        const std::string scoreText = "Score: " + std::to_string(score);
-        for (int column = 0; column < width && column < static_cast<int>(scoreText.length()); ++column)
+        auto moveHudCursor = [&](int row, int column)
         {
-            scoreboard[column] = scoreText[column];
-        }
-        std::cout << scoreboard;
-        std::cout.flush();
-
-#ifdef _WIN32
-        COORD bestScorePosition = {0, 2};
-        SetConsoleCursorPosition(console, bestScorePosition);
+            COORD position = {
+                static_cast<SHORT>(column),
+                static_cast<SHORT>(row)};
+            SetConsoleCursorPosition(console, position);
+        };
 #else
-        std::cout << "\x1B[3;1H";
-#endif
-        std::string bestScoreboard(width, ' ');
-        const std::string bestScoreText = "Best: " + std::to_string(bestScore);
-        for (int column = 0; column < width && column < static_cast<int>(bestScoreText.length()); ++column)
+        auto moveHudCursor = [&](int row, int column)
         {
-            bestScoreboard[column] = bestScoreText[column];
+            std::cout << "\x1B[" << row + 1 << ";" << column + 1 << "H";
+        };
+#endif
+
+        const std::string titleText = "TERMINAL RACER";
+        const std::string scoreText = "SCORE " + std::to_string(score);
+        const std::string bestText = "BEST " + std::to_string(bestScore);
+        const int titleColumn = width >= static_cast<int>(titleText.length()) + 2 ? 2 : 0;
+        const int bestColumn = width - static_cast<int>(bestText.length()) - 2;
+        const int scoreColumn =
+            bestColumn - static_cast<int>(scoreText.length()) - 4;
+
+        moveHudCursor(0, 0);
+        printColoredText(std::string(width, ' '), "\x1B[0m");
+        if (titleColumn + static_cast<int>(titleText.length()) <= width)
+        {
+            moveHudCursor(0, titleColumn);
+            printColoredText(titleText, "\x1B[96m");
         }
-        std::cout << bestScoreboard;
+        if (scoreColumn >= 0 && scoreColumn + static_cast<int>(scoreText.length()) <= width)
+        {
+            moveHudCursor(0, scoreColumn);
+            printColoredText(scoreText, "\x1B[97m");
+        }
+        if (bestColumn >= 0 && bestColumn + static_cast<int>(bestText.length()) <= width)
+        {
+            moveHudCursor(0, bestColumn);
+            printColoredText(bestText, "\x1B[93m");
+        }
+
+        moveHudCursor(1, 0);
+        printColoredText(std::string(width, ' '), "\x1B[0m");
+
+        moveHudCursor(2, 0);
+        printColoredText(std::string(width, '-'), "\x1B[90m");
         std::cout.flush();
 
         for (int row = 0; row < gameHeight; ++row)
         {
             std::string line(width, ' ');
+            const bool roadBorder = row == roadTop || row == roadBottom;
+            const bool laneMarkingRow =
+                row > roadTop && row < roadBottom &&
+                (row == roadTop + 3 || row == roadTop + 6 || row == roadTop + 9);
 
-            if (row == roadTop || row == roadBottom)
+            if (roadBorder)
             {
                 line.assign(width, '=');
-            }
-            else if (row > roadTop && row < roadBottom && row == (roadTop + roadBottom) / 2)
-            {
-                for (int column = 1; column < width; column += 4)
+                if (width >= 2)
                 {
-                    line[column] = '-';
+                    line.front() = '+';
+                    line.back() = '+';
+                }
+            }
+            else
+            {
+                if (width >= 2)
+                {
+                    line[1] = '|';
+                    line[width - 2] = '|';
+                }
+
+                if (laneMarkingRow)
+                {
+                    const int markingPhase = obstacleLeft[0];
+                    for (int column = 2; column < width - 2; ++column)
+                    {
+                        if ((column + markingPhase) % 12 < 5)
+                        {
+                            line[column] = '-';
+                        }
+                    }
                 }
             }
 
@@ -547,21 +579,33 @@ void showTerminalRacer(int& bestScore, bool& quitRequested)
                     {
                         if (row == obstacleRow[obstacle])
                         {
-                            line[obstacleColumn] = '#';
+                            line[obstacleColumn] = '[';
+                            if (column == 1)
+                            {
+                                line[obstacleColumn] = '#';
+                            }
+                            else if (column == 2)
+                            {
+                                line[obstacleColumn] = ']';
+                            }
                         }
                     }
                 }
             }
 
-            if (!gameOver && row == carTop && carLeft >= 0 && carLeft + carWidth <= width)
+            if (!gameOver && row == carTop &&
+                visualCarLeft >= 0 && visualCarLeft + visualCarWidth <= width)
             {
-                line.replace(carLeft, carWidth, " /---\\ ");
+                line.replace(visualCarLeft, visualCarWidth, "<____/\\___________");
             }
-            else if (!gameOver && row == carTop + 1 && carLeft >= 0 && carLeft + carWidth <= width)
+            else if (!gameOver && row == carTop + 1 &&
+                     visualCarLeft >= 0 && visualCarLeft + visualCarWidth <= width)
             {
-                line.replace(carLeft, carWidth, "|_O_O_|");
+                line.replace(visualCarLeft, visualCarWidth, "O================O");
             }
 
+            bool popupLine = false;
+            const char* popupColor = "\x1B[91m";
             if (gameOver)
             {
                 const int popupRow = (roadTop + roadBottom) / 2 - 2;
@@ -570,26 +614,32 @@ void showTerminalRacer(int& bestScore, bool& quitRequested)
                 if (row == popupRow)
                 {
                     gameOverText = "GAME OVER";
+                    popupColor = "\x1B[91m";
                 }
                 else if (row == popupRow + 1)
                 {
-                    gameOverText = "Score: " + std::to_string(score);
+                    gameOverText = "SCORE " + std::to_string(score);
+                    popupColor = "\x1B[97m";
                 }
                 else if (row == popupRow + 2)
                 {
-                    gameOverText = "Best: " + std::to_string(bestScore);
+                    gameOverText = "BEST " + std::to_string(bestScore);
+                    popupColor = "\x1B[93m";
                 }
                 else if (row == popupRow + 3)
                 {
-                    gameOverText = "R: Play Again";
+                    gameOverText = "R  PLAY AGAIN";
+                    popupColor = "\x1B[90m";
                 }
                 else if (row == popupRow + 4)
                 {
-                    gameOverText = "M: Main Menu  Q: Quit";
+                    gameOverText = "M  MENU    Q  QUIT";
+                    popupColor = "\x1B[90m";
                 }
 
                 if (!gameOverText.empty())
                 {
+                    popupLine = true;
                     const int textLeft = (width - static_cast<int>(gameOverText.length())) / 2;
                     if (textLeft >= 0 && textLeft + static_cast<int>(gameOverText.length()) <= width)
                     {
@@ -608,7 +658,7 @@ void showTerminalRacer(int& bestScore, bool& quitRequested)
             }
             else if (!started && row == (roadTop + roadBottom) / 2 + 1)
             {
-                const std::string startText = "Press any key to start";
+                const std::string startText = "PRESS ANY KEY TO START";
                 const int textLeft = (width - static_cast<int>(startText.length())) / 2;
                 if (textLeft >= 0 && textLeft + static_cast<int>(startText.length()) <= width)
                 {
@@ -626,7 +676,7 @@ void showTerminalRacer(int& bestScore, bool& quitRequested)
             }
             else if (started && paused && row == (roadTop + roadBottom) / 2 + 1)
             {
-                const std::string pauseText = "P: Resume    M: Menu    Q: Quit";
+                const std::string pauseText = "P  RESUME    M  MENU    Q  QUIT";
                 const int textLeft = (width - static_cast<int>(pauseText.length())) / 2;
                 if (textLeft >= 0 && textLeft + static_cast<int>(pauseText.length()) <= width)
                 {
@@ -639,7 +689,44 @@ void showTerminalRacer(int& bestScore, bool& quitRequested)
 #else
             std::cout << "\x1B[" << row + 4 << ";1H";
 #endif
-            std::cout << line;
+            const char* rowColor = "\x1B[0m";
+            if (popupLine)
+            {
+                rowColor = popupColor;
+            }
+            else if (started && paused &&
+                     (row == (roadTop + roadBottom) / 2 ||
+                      row == (roadTop + roadBottom) / 2 + 1))
+            {
+                rowColor = "\x1B[93m";
+            }
+            else if (!gameOver && (row == carTop || row == carTop + 1))
+            {
+                rowColor = "\x1B[94m";
+            }
+            else
+            {
+                bool obstacleOnRow = false;
+                for (int obstacle = 0; obstacle < activeObstacleCount; ++obstacle)
+                {
+                    if (row == obstacleRow[obstacle])
+                    {
+                        obstacleOnRow = true;
+                        break;
+                    }
+                }
+
+                if (obstacleOnRow)
+                {
+                    rowColor = "\x1B[91m";
+                }
+                else if (roadBorder || laneMarkingRow)
+                {
+                    rowColor = "\x1B[90m";
+                }
+            }
+
+            printColoredText(line, rowColor);
             std::cout.flush();
         }
 
@@ -651,15 +738,20 @@ void showTerminalRacer(int& bestScore, bool& quitRequested)
 #endif
         std::string controls(width, ' ');
         const std::string controlsText =
-            gameOver ? "R: Play Again    M: Main Menu    Q: Quit" :
-            (!started ? "M: Main Menu    Q: Quit" :
-             (paused ? "P: Resume    M: Menu    Q: Quit" :
-              "W/S: Move    P: Pause    M: Menu    Q: Quit"));
-        for (int column = 0; column < width && column < static_cast<int>(controlsText.length()); ++column)
+            gameOver ? "R PLAY AGAIN    M MENU    Q QUIT" :
+            (!started ? "M MENU    Q QUIT" :
+             (paused ? "P RESUME    M MENU    Q QUIT" :
+              "W/S MOVE    P PAUSE    M MENU    Q QUIT"));
+        const int controlsColumn =
+            (width - static_cast<int>(controlsText.length())) / 2;
+        const int visibleControlsColumn = controlsColumn > 0 ? controlsColumn : 0;
+        for (int column = 0; column < static_cast<int>(controlsText.length()) &&
+                            visibleControlsColumn + column < width;
+             ++column)
         {
-            controls[column] = controlsText[column];
+            controls[visibleControlsColumn + column] = controlsText[column];
         }
-        std::cout << controls;
+        printColoredText(controls, "\x1B[90m");
 
 #ifdef _WIN32
         COORD cursorPosition = {0, static_cast<SHORT>(gameHeight + 4)};
@@ -749,11 +841,46 @@ int main()
     while (choice != 'q' && choice != 'Q')
     {
         clearTerminal();
-        std::cout << "\nTERMINAL GAMES\n"
-                  << "1. Terminal Racer\n"
-                  << "2. Coming Soon...\n"
-                  << "Q. Quit\n"
-                  << "\nChoose an option: ";
+        int menuWidth = 60;
+        int menuHeight = 24;
+        getTerminalSize(menuWidth, menuHeight);
+        (void)menuHeight;
+        if (menuWidth < 32)
+        {
+            menuWidth = 32;
+        }
+
+        const std::string border = "+" + std::string(menuWidth - 2, '=') + "+";
+        auto menuLine = [&](const std::string& text, int leftPadding)
+        {
+            std::string line(menuWidth, ' ');
+            if (leftPadding < 0)
+            {
+                leftPadding = 0;
+            }
+            const int start = leftPadding + 1;
+            if (start < menuWidth - 1)
+            {
+                const int available = menuWidth - 1 - start;
+                line.replace(start, std::min(available, static_cast<int>(text.length())),
+                             text.substr(0, available));
+            }
+            return line;
+        };
+        auto centeredMenuLine = [&](const std::string& text)
+        {
+            return menuLine(text, (menuWidth - static_cast<int>(text.length())) / 2 - 1);
+        };
+
+        printColoredText(border + "\n", "\x1B[90m");
+        printColoredText(centeredMenuLine("TERMINAL GAMES") + "\n", "\x1B[96m");
+        printColoredText(std::string(menuWidth, ' ') + "\n", "\x1B[0m");
+        printColoredText(menuLine("1  TERMINAL RACER", 3) + "\n", "\x1B[94m");
+        printColoredText(menuLine("2  COMING SOON...", 3) + "\n", "\x1B[90m");
+        printColoredText(menuLine("Q  QUIT", 3) + "\n", "\x1B[90m");
+        printColoredText(std::string(menuWidth, ' ') + "\n", "\x1B[0m");
+        printColoredText(border + "\n", "\x1B[90m");
+        printColoredText("Choose an option: ", "\x1B[90m");
 
         std::cin >> choice;
 
