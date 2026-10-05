@@ -2,9 +2,9 @@
 #include <string>
 
 #ifdef _WIN32
-#include <conio.h>
 #include <windows.h>
 #else
+#include <sys/select.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -135,10 +135,73 @@ void showTerminalRacer()
 
     clearTerminal();
 
+#ifdef _WIN32
+    HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_CURSOR_INFO originalCursorInfo;
+    bool cursorInfoSaved = GetConsoleCursorInfo(console, &originalCursorInfo) != 0;
+
+    if (cursorInfoSaved)
+    {
+        CONSOLE_CURSOR_INFO hiddenCursorInfo = originalCursorInfo;
+        hiddenCursorInfo.bVisible = FALSE;
+        SetConsoleCursorInfo(console, &hiddenCursorInfo);
+    }
+#else
+    std::cout << "\x1B[?25l";
+    std::cout.flush();
+#endif
+
     bool playing = true;
     bool firstFrame = true;
     while (playing)
     {
+        char input = '\0';
+#ifdef _WIN32
+        if (GetAsyncKeyState('M') & 0x8000)
+        {
+            input = 'm';
+        }
+        else if (GetAsyncKeyState('W') & 0x8000)
+        {
+            input = 'w';
+        }
+        else if (GetAsyncKeyState('S') & 0x8000)
+        {
+            input = 's';
+        }
+#else
+        fd_set inputSet;
+        FD_ZERO(&inputSet);
+        FD_SET(STDIN_FILENO, &inputSet);
+        timeval timeout = {0, 0};
+
+        if (select(STDIN_FILENO + 1, &inputSet, nullptr, nullptr, &timeout) > 0)
+        {
+            if (read(STDIN_FILENO, &input, 1) != 1)
+            {
+                break;
+            }
+        }
+#endif
+
+        if ((input == 'w' || input == 'W') && carTop > minimumCarTop)
+        {
+            --carTop;
+        }
+        else if ((input == 's' || input == 'S') && carTop < maximumCarTop)
+        {
+            ++carTop;
+        }
+        else if (input == 'm' || input == 'M')
+        {
+            playing = false;
+        }
+
+        if (!playing)
+        {
+            break;
+        }
+
         if (!firstFrame)
         {
 #ifdef _WIN32
@@ -224,31 +287,41 @@ void showTerminalRacer()
         std::cout.flush();
 
 #ifdef _WIN32
-        const char input = static_cast<char>(_getch());
+        Sleep(50);
 #else
-        char input = '\0';
-        if (read(STDIN_FILENO, &input, 1) != 1)
-        {
-            break;
-        }
+        usleep(50000);
 #endif
-
-        if ((input == 'w' || input == 'W') && carTop > minimumCarTop)
-        {
-            --carTop;
-        }
-        else if ((input == 's' || input == 'S') && carTop < maximumCarTop)
-        {
-            ++carTop;
-        }
-        else if (input == 'm' || input == 'M')
-        {
-            playing = false;
-        }
     }
 
 #ifndef _WIN32
+    char discardedInput[64];
+    fd_set pendingInput;
+    timeval timeout = {0, 0};
+
+    FD_ZERO(&pendingInput);
+    FD_SET(STDIN_FILENO, &pendingInput);
+    while (select(STDIN_FILENO + 1, &pendingInput, nullptr, nullptr, &timeout) > 0)
+    {
+        if (read(STDIN_FILENO, discardedInput, sizeof(discardedInput)) <= 0)
+        {
+            break;
+        }
+
+        FD_ZERO(&pendingInput);
+        FD_SET(STDIN_FILENO, &pendingInput);
+        timeout = {0, 0};
+    }
+
     tcsetattr(STDIN_FILENO, TCSANOW, &originalTerminal);
+    std::cout << "\x1B[?25h";
+    std::cout.flush();
+#else
+    FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
+
+    if (cursorInfoSaved)
+    {
+        SetConsoleCursorInfo(console, &originalCursorInfo);
+    }
 #endif
 }
 
