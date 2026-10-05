@@ -92,7 +92,7 @@ void showTerminalRacer()
         return;
     }
 
-    const int gameHeight = height - 3;
+    const int gameHeight = height - 4;
     if (gameHeight < 5 || width < 7)
     {
         std::cout << "The terminal is too small to display Terminal Racer.\n"
@@ -117,6 +117,7 @@ void showTerminalRacer()
     const int obstacleWidth = 3;
     const int obstacleRow = roadTop + 2;
     int obstacleLeft = width - obstacleWidth;
+    int score = 0;
 
 #ifndef _WIN32
     termios originalTerminal;
@@ -212,6 +213,7 @@ void showTerminalRacer()
             if (obstacleLeft + obstacleWidth <= 0)
             {
                 obstacleLeft = width - obstacleWidth;
+                ++score;
             }
 
             const bool horizontalOverlap =
@@ -254,6 +256,22 @@ void showTerminalRacer()
         std::cout << "\x1B[1;1H";
 #endif
         std::cout << title;
+        std::cout.flush();
+
+#ifdef _WIN32
+        COORD scorePosition = {0, 1};
+        SetConsoleCursorPosition(console, scorePosition);
+#else
+        std::cout << "\x1B[2;1H";
+#endif
+        std::string scoreboard(width, ' ');
+        const std::string scoreText = "Score: " + std::to_string(score);
+        for (int column = 0; column < width && column < static_cast<int>(scoreText.length()); ++column)
+        {
+            scoreboard[column] = scoreText[column];
+        }
+        std::cout << scoreboard;
+        std::cout.flush();
 
         for (int row = 0; row < gameHeight; ++row)
         {
@@ -294,11 +312,23 @@ void showTerminalRacer()
 
             if (gameOver)
             {
-                const int popupRow = (roadTop + roadBottom) / 2;
-                const std::string gameOverText =
-                    row == popupRow ? "GAME OVER" : "Press M for Main Menu";
+                const int popupRow = (roadTop + roadBottom) / 2 - 1;
+                std::string gameOverText;
 
-                if (row == popupRow || row == popupRow + 1)
+                if (row == popupRow)
+                {
+                    gameOverText = "GAME OVER";
+                }
+                else if (row == popupRow + 1)
+                {
+                    gameOverText = "Score: " + std::to_string(score);
+                }
+                else if (row == popupRow + 2)
+                {
+                    gameOverText = "Press M for Main Menu";
+                }
+
+                if (!gameOverText.empty())
                 {
                     const int textLeft = (width - static_cast<int>(gameOverText.length())) / 2;
                     if (textLeft >= 0 && textLeft + static_cast<int>(gameOverText.length()) <= width)
@@ -307,21 +337,21 @@ void showTerminalRacer()
                     }
                 }
             }
-
 #ifdef _WIN32
-            COORD rowPosition = {0, static_cast<SHORT>(row + 2)};
+            COORD rowPosition = {0, static_cast<SHORT>(row + 3)};
             SetConsoleCursorPosition(console, rowPosition);
 #else
-            std::cout << "\x1B[" << row + 3 << ";1H";
+            std::cout << "\x1B[" << row + 4 << ";1H";
 #endif
             std::cout << line;
+            std::cout.flush();
         }
 
 #ifdef _WIN32
-        COORD controlsPosition = {0, static_cast<SHORT>(gameHeight + 2)};
+        COORD controlsPosition = {0, static_cast<SHORT>(gameHeight + 3)};
         SetConsoleCursorPosition(console, controlsPosition);
 #else
-        std::cout << "\x1B[" << gameHeight + 3 << ";1H";
+        std::cout << "\x1B[" << gameHeight + 4 << ";1H";
 #endif
         std::string controls(width, ' ');
         const std::string controlsText = gameOver ? "" : "W: Up  S: Down  M: Main Menu";
@@ -332,10 +362,10 @@ void showTerminalRacer()
         std::cout << controls;
 
 #ifdef _WIN32
-        COORD cursorPosition = {0, static_cast<SHORT>(gameHeight + 3)};
+        COORD cursorPosition = {0, static_cast<SHORT>(gameHeight + 4)};
         SetConsoleCursorPosition(console, cursorPosition);
 #else
-        std::cout << "\x1B[" << gameHeight + 4 << ";1H";
+        std::cout << "\x1B[" << gameHeight + 5 << ";1H";
 #endif
         std::cout.flush();
 
