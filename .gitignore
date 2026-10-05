@@ -10,3 +10,6 @@ build/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local game data
+best_score.dat
