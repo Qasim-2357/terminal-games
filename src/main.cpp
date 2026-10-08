@@ -2,46 +2,7 @@
 #include <fstream>
 #include <string>
 #include <algorithm>
-
-#ifdef _WIN32
-#include <conio.h>
-#include <windows.h>
-#else
-#include <sys/select.h>
-#include <sys/ioctl.h>
-#include <termios.h>
-#include <unistd.h>
-#endif
-
-bool getTerminalSize(int& width, int& height)
-{
-#ifdef _WIN32
-    CONSOLE_SCREEN_BUFFER_INFO info;
-    if (!GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &info))
-    {
-        return false;
-    }
-
-    width = info.srWindow.Right - info.srWindow.Left + 1;
-    height = info.srWindow.Bottom - info.srWindow.Top + 1;
-#else
-    winsize size;
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &size) != 0)
-    {
-        return false;
-    }
-
-    width = size.ws_col;
-    height = size.ws_row;
-#endif
-
-    return width > 0 && height > 0;
-}
-
-void printColoredText(const std::string& text, const char* color)
-{
-    std::cout << color << text << "\x1B[0m";
-}
+#include "terminal.h"
 
 constexpr int getObstacleSpeed(int score)
 {
@@ -120,50 +81,12 @@ static_assert(!isCarWithinRoad(10, 0, 11));
 static_assert(sweptCollision(10, 7, 5, 20, 3, 5, 10));
 static_assert(!sweptCollision(10, 7, 5, 20, 3, 1, 10));
 
-void clearTerminal()
-{
-#ifdef _WIN32
-    HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
-
-    CONSOLE_SCREEN_BUFFER_INFO info;
-    if (!GetConsoleScreenBufferInfo(console, &info))
-    {
-        return;
-    }
-
-    DWORD cellCount = info.dwSize.X * info.dwSize.Y;
-    DWORD written = 0;
-    COORD home = {0, 0};
-
-    FillConsoleOutputCharacter(
-        console,
-        ' ',
-        cellCount,
-        home,
-        &written
-    );
-
-    FillConsoleOutputAttribute(
-        console,
-        info.wAttributes,
-        cellCount,
-        home,
-        &written
-    );
-
-    SetConsoleCursorPosition(console, home);
-#else
-    std::cout << "\x1B[2J\x1B[H";
-    std::cout.flush();
-#endif
-}
-
 void showTerminalRacer(int& bestScore, bool& quitRequested)
 {
     int width = 0;
     int height = 0;
 
-    if (!getTerminalSize(width, height))
+    if (!terminal::getSize(width, height))
     {
         std::cout << "Could not determine the terminal dimensions.\n"
                   << "Press M to return to the main menu: ";
@@ -173,7 +96,7 @@ void showTerminalRacer(int& bestScore, bool& quitRequested)
         {
             std::cin >> choice;
         }
-        clearTerminal();
+        terminal::clear();
         return;
     }
 
@@ -190,7 +113,7 @@ void showTerminalRacer(int& bestScore, bool& quitRequested)
         {
             std::cin >> choice;
         }
-        clearTerminal();
+        terminal::clear();
         return;
     }
 
@@ -214,41 +137,12 @@ void showTerminalRacer(int& bestScore, bool& quitRequested)
          roadTop + 8, roadTop + 9, roadTop + 5, roadTop + 1}
     };
 
-#ifndef _WIN32
-    termios originalTerminal;
-    if (tcgetattr(STDIN_FILENO, &originalTerminal) != 0)
+    terminal::Session terminalSession;
+    if (!terminalSession.start())
     {
         return;
     }
-
-    termios racerTerminal = originalTerminal;
-    racerTerminal.c_lflag &= ~(ICANON | ECHO);
-    racerTerminal.c_cc[VMIN] = 1;
-    racerTerminal.c_cc[VTIME] = 0;
-
-    if (tcsetattr(STDIN_FILENO, TCSANOW, &racerTerminal) != 0)
-    {
-        return;
-    }
-#endif
-
-    clearTerminal();
-
-#ifdef _WIN32
-    HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
-    CONSOLE_CURSOR_INFO originalCursorInfo;
-    bool cursorInfoSaved = GetConsoleCursorInfo(console, &originalCursorInfo) != 0;
-
-    if (cursorInfoSaved)
-    {
-        CONSOLE_CURSOR_INFO hiddenCursorInfo = originalCursorInfo;
-        hiddenCursorInfo.bVisible = FALSE;
-        SetConsoleCursorInfo(console, &hiddenCursorInfo);
-    }
-#else
-    std::cout << "\x1B[?25l";
-    std::cout.flush();
-#endif
+    terminal::clear();
 
     bool playing = true;
     while (playing)
@@ -285,69 +179,7 @@ void showTerminalRacer(int& bestScore, bool& quitRequested)
 
         while (playing)
         {
-        char input = '\0';
-#ifdef _WIN32
-        if (!started)
-        {
-            if (GetAsyncKeyState('M') & 0x8000)
-            {
-                input = 'm';
-            }
-            else if (GetAsyncKeyState('Q') & 0x8000)
-            {
-                input = 'q';
-            }
-            else if (_kbhit())
-            {
-                const int key = _getch();
-                input = static_cast<char>(key == 0 || key == 224 ? 'x' : key);
-            }
-        }
-        else if (GetAsyncKeyState('M') & 0x8000)
-        {
-            input = 'm';
-        }
-        else if (GetAsyncKeyState('Q') & 0x8000)
-        {
-            input = 'q';
-        }
-        else if (GetAsyncKeyState('W') & 0x8000)
-        {
-            input = 'w';
-        }
-        else if (GetAsyncKeyState('S') & 0x8000)
-        {
-            input = 's';
-        }
-        else if (GetAsyncKeyState(VK_SPACE) & 0x8000)
-        {
-            input = ' ';
-        }
-        else if (gameOver && (GetAsyncKeyState('R') & 0x8000))
-        {
-            input = 'r';
-        }
-
-        const bool pauseKeyIsDown = (GetAsyncKeyState('P') & 0x8000) != 0;
-        if (pauseKeyIsDown && !pauseKeyWasDown)
-        {
-            input = 'p';
-        }
-        pauseKeyWasDown = pauseKeyIsDown;
-#else
-        fd_set inputSet;
-        FD_ZERO(&inputSet);
-        FD_SET(STDIN_FILENO, &inputSet);
-        timeval timeout = {0, 0};
-
-        if (select(STDIN_FILENO + 1, &inputSet, nullptr, nullptr, &timeout) > 0)
-        {
-            if (read(STDIN_FILENO, &input, 1) != 1)
-            {
-                break;
-            }
-        }
-#endif
+        char input = terminalSession.pollInput(started, gameOver, pauseKeyWasDown);
 
         if (!started)
         {
@@ -473,31 +305,9 @@ void showTerminalRacer(int& bestScore, bool& quitRequested)
 
         if (!firstFrame)
         {
-#ifdef _WIN32
-            HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
-            COORD home = {0, 0};
-            SetConsoleCursorPosition(console, home);
-#else
-            std::cout << "\x1B[H";
-#endif
+            terminal::moveCursor(0, 0);
         }
         firstFrame = false;
-
-#ifdef _WIN32
-        HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
-        auto moveHudCursor = [&](int row, int column)
-        {
-            COORD position = {
-                static_cast<SHORT>(column),
-                static_cast<SHORT>(row)};
-            SetConsoleCursorPosition(console, position);
-        };
-#else
-        auto moveHudCursor = [&](int row, int column)
-        {
-            std::cout << "\x1B[" << row + 1 << ";" << column + 1 << "H";
-        };
-#endif
 
         const std::string titleText = "TERMINAL RACER";
         const std::string scoreText = "SCORE " + std::to_string(score);
@@ -507,29 +317,29 @@ void showTerminalRacer(int& bestScore, bool& quitRequested)
         const int scoreColumn =
             bestColumn - static_cast<int>(scoreText.length()) - 4;
 
-        moveHudCursor(0, 0);
-        printColoredText(std::string(width, ' '), "\x1B[0m");
+        terminal::moveCursor(0, 0);
+        terminal::printColored(std::string(width, ' '), "\x1B[0m");
         if (titleColumn + static_cast<int>(titleText.length()) <= width)
         {
-            moveHudCursor(0, titleColumn);
-            printColoredText(titleText, "\x1B[96m");
+            terminal::moveCursor(0, titleColumn);
+            terminal::printColored(titleText, "\x1B[96m");
         }
         if (scoreColumn >= 0 && scoreColumn + static_cast<int>(scoreText.length()) <= width)
         {
-            moveHudCursor(0, scoreColumn);
-            printColoredText(scoreText, "\x1B[97m");
+            terminal::moveCursor(0, scoreColumn);
+            terminal::printColored(scoreText, "\x1B[97m");
         }
         if (bestColumn >= 0 && bestColumn + static_cast<int>(bestText.length()) <= width)
         {
-            moveHudCursor(0, bestColumn);
-            printColoredText(bestText, "\x1B[93m");
+            terminal::moveCursor(0, bestColumn);
+            terminal::printColored(bestText, "\x1B[93m");
         }
 
-        moveHudCursor(1, 0);
-        printColoredText(std::string(width, ' '), "\x1B[0m");
+        terminal::moveCursor(1, 0);
+        terminal::printColored(std::string(width, ' '), "\x1B[0m");
 
-        moveHudCursor(2, 0);
-        printColoredText(std::string(width, '-'), "\x1B[90m");
+        terminal::moveCursor(2, 0);
+        terminal::printColored(std::string(width, '-'), "\x1B[90m");
         std::cout.flush();
 
         for (int row = 0; row < gameHeight; ++row)
@@ -683,12 +493,7 @@ void showTerminalRacer(int& bestScore, bool& quitRequested)
                     line.replace(textLeft, pauseText.length(), pauseText);
                 }
             }
-#ifdef _WIN32
-            COORD rowPosition = {0, static_cast<SHORT>(row + 3)};
-            SetConsoleCursorPosition(console, rowPosition);
-#else
-            std::cout << "\x1B[" << row + 4 << ";1H";
-#endif
+            terminal::moveCursor(row + 3, 0);
             const char* rowColor = "\x1B[0m";
             if (popupLine)
             {
@@ -726,16 +531,11 @@ void showTerminalRacer(int& bestScore, bool& quitRequested)
                 }
             }
 
-            printColoredText(line, rowColor);
+            terminal::printColored(line, rowColor);
             std::cout.flush();
         }
 
-#ifdef _WIN32
-        COORD controlsPosition = {0, static_cast<SHORT>(gameHeight + 3)};
-        SetConsoleCursorPosition(console, controlsPosition);
-#else
-        std::cout << "\x1B[" << gameHeight + 4 << ";1H";
-#endif
+        terminal::moveCursor(gameHeight + 3, 0);
         std::string controls(width, ' ');
         const std::string controlsText =
             gameOver ? "R PLAY AGAIN    M MENU    Q QUIT" :
@@ -751,77 +551,21 @@ void showTerminalRacer(int& bestScore, bool& quitRequested)
         {
             controls[visibleControlsColumn + column] = controlsText[column];
         }
-        printColoredText(controls, "\x1B[90m");
+        terminal::printColored(controls, "\x1B[90m");
 
-#ifdef _WIN32
-        COORD cursorPosition = {0, static_cast<SHORT>(gameHeight + 4)};
-        SetConsoleCursorPosition(console, cursorPosition);
-#else
-        std::cout << "\x1B[" << gameHeight + 5 << ";1H";
-#endif
+        terminal::moveCursor(gameHeight + 4, 0);
         std::cout.flush();
 
-#ifdef _WIN32
-        Sleep(50);
-#else
-        usleep(50000);
-#endif
+        terminal::sleepMilliseconds(50);
         }
         
         if (playing)
         {
-#ifndef _WIN32
-            char discardedInput[64];
-            fd_set pendingInput;
-            timeval timeout = {0, 0};
-            FD_ZERO(&pendingInput);
-            FD_SET(STDIN_FILENO, &pendingInput);
-            while (select(STDIN_FILENO + 1, &pendingInput, nullptr, nullptr, &timeout) > 0)
-            {
-                if (read(STDIN_FILENO, discardedInput, sizeof(discardedInput)) <= 0)
-                {
-                    break;
-                }
-                FD_ZERO(&pendingInput);
-                FD_SET(STDIN_FILENO, &pendingInput);
-                timeout = {0, 0};
-            }
-#else
-            FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
-#endif
+            terminalSession.flushInput();
         }
     }
 
-#ifndef _WIN32
-    char discardedInput[64];
-    fd_set pendingInput;
-    timeval timeout = {0, 0};
-
-    FD_ZERO(&pendingInput);
-    FD_SET(STDIN_FILENO, &pendingInput);
-    while (select(STDIN_FILENO + 1, &pendingInput, nullptr, nullptr, &timeout) > 0)
-    {
-        if (read(STDIN_FILENO, discardedInput, sizeof(discardedInput)) <= 0)
-        {
-            break;
-        }
-
-        FD_ZERO(&pendingInput);
-        FD_SET(STDIN_FILENO, &pendingInput);
-        timeout = {0, 0};
-    }
-
-    tcsetattr(STDIN_FILENO, TCSANOW, &originalTerminal);
-    std::cout << "\x1B[?25h";
-    std::cout.flush();
-#else
-    FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
-
-    if (cursorInfoSaved)
-    {
-        SetConsoleCursorInfo(console, &originalCursorInfo);
-    }
-#endif
+    terminalSession.stop();
 }
 
 int main()
@@ -840,10 +584,10 @@ int main()
 
     while (choice != 'q' && choice != 'Q')
     {
-        clearTerminal();
+        terminal::clear();
         int menuWidth = 60;
         int menuHeight = 24;
-        getTerminalSize(menuWidth, menuHeight);
+        terminal::getSize(menuWidth, menuHeight);
         (void)menuHeight;
         if (menuWidth < 32)
         {
@@ -872,15 +616,15 @@ int main()
             return menuLine(text, (menuWidth - static_cast<int>(text.length())) / 2 - 1);
         };
 
-        printColoredText(border + "\n", "\x1B[90m");
-        printColoredText(centeredMenuLine("TERMINAL GAMES") + "\n", "\x1B[96m");
-        printColoredText(std::string(menuWidth, ' ') + "\n", "\x1B[0m");
-        printColoredText(menuLine("1  TERMINAL RACER", 3) + "\n", "\x1B[94m");
-        printColoredText(menuLine("2  COMING SOON...", 3) + "\n", "\x1B[90m");
-        printColoredText(menuLine("Q  QUIT", 3) + "\n", "\x1B[90m");
-        printColoredText(std::string(menuWidth, ' ') + "\n", "\x1B[0m");
-        printColoredText(border + "\n", "\x1B[90m");
-        printColoredText("Choose an option: ", "\x1B[90m");
+        terminal::printColored(border + "\n", "\x1B[90m");
+        terminal::printColored(centeredMenuLine("TERMINAL GAMES") + "\n", "\x1B[96m");
+        terminal::printColored(std::string(menuWidth, ' ') + "\n", "\x1B[0m");
+        terminal::printColored(menuLine("1  TERMINAL RACER", 3) + "\n", "\x1B[94m");
+        terminal::printColored(menuLine("2  COMING SOON...", 3) + "\n", "\x1B[90m");
+        terminal::printColored(menuLine("Q  QUIT", 3) + "\n", "\x1B[90m");
+        terminal::printColored(std::string(menuWidth, ' ') + "\n", "\x1B[0m");
+        terminal::printColored(border + "\n", "\x1B[90m");
+        terminal::printColored("Choose an option: ", "\x1B[90m");
 
         std::cin >> choice;
 
