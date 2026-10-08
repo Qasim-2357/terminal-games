@@ -3,6 +3,7 @@
 #include <string>
 #include <algorithm>
 #include "racer.h"
+#include "snake.h"
 #include "terminal.h"
 
 int main()
@@ -57,7 +58,8 @@ int main()
         terminal::printColored(centeredMenuLine("TERMINAL GAMES") + "\n", "\x1B[96m");
         terminal::printColored(std::string(menuWidth, ' ') + "\n", "\x1B[0m");
         terminal::printColored(menuLine("1  TERMINAL RACER", 3) + "\n", "\x1B[94m");
-        terminal::printColored(menuLine("2  COMING SOON...", 3) + "\n", "\x1B[90m");
+        terminal::printColored(menuLine("2  SNAKE", 3) + "\n", "\x1B[94m");
+        terminal::printColored(menuLine("3  COMING SOON...", 3) + "\n", "\x1B[90m");
         terminal::printColored(menuLine("Q  QUIT", 3) + "\n", "\x1B[90m");
         terminal::printColored(std::string(menuWidth, ' ') + "\n", "\x1B[0m");
         terminal::printColored(border + "\n", "\x1B[90m");
@@ -68,6 +70,17 @@ int main()
         if (choice == '1')
         {
             if (!runTerminalRacer(bestScore))
+            {
+                choice = 'q';
+            }
+            else
+            {
+                choice = '\0';
+            }
+        }
+        else if (choice == '2')
+        {
+            if (!runSnake(bestScore))
             {
                 choice = 'q';
             }
