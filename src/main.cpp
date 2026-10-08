@@ -862,7 +862,7 @@ int main()
             if (start < menuWidth - 1)
             {
                 const int available = menuWidth - 1 - start;
-                line.replace(start, std::min(available, static_cast<int>(text.length())),
+                line.replace(start, (std::min)(available, static_cast<int>(text.length())),
                              text.substr(0, available));
             }
             return line;
