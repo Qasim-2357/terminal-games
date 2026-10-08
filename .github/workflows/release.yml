@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            executable: build/Release/terminal_games.exe
+            archive: Terminal-Games-${{ github.ref_name }}-Windows.zip
+          - name: Linux
+            os: ubuntu-latest
+            executable: build/terminal_games
+            archive: Terminal-Games-${{ github.ref_name }}-Linux.tar.gz
+          - name: macOS
+            os: macos-latest
+            executable: build/terminal_games
+            archive: Terminal-Games-${{ github.ref_name }}-macOS.tar.gz
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON
+
+      - name: Build terminal_games
+        run: cmake --build build --config Release --target terminal_games
+
+      - name: Package Windows release
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          New-Item -ItemType Directory -Path package | Out-Null
+          Copy-Item "${{ matrix.executable }}" package/terminal_games.exe
+          Copy-Item README.md package/README.txt
+          Compress-Archive -Path package/terminal_games.exe, package/README.txt -DestinationPath "$env:ARCHIVE"
+
+      - name: Package Unix release
+        if: runner.os != 'Windows'
+        env:
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          mkdir package
+          cp "${{ matrix.executable }}" package/terminal_games
+          cp README.md package/README.txt
+          tar -czf "$ARCHIVE" -C package terminal_games README.txt
+
+      - name: Upload release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.name }}
+          path: ${{ matrix.archive }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create release and upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" release-assets/* --repo "${{ github.repository }}" --title "Terminal Games ${{ github.ref_name }}" --generate-notes
