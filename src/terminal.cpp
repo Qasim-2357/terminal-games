@@ -184,6 +184,14 @@ char Session::pollInput(bool started, bool gameOver, bool& pauseKeyWasDown)
     {
         input = 's';
     }
+    else if (GetAsyncKeyState('A') & 0x8000)
+    {
+        input = 'a';
+    }
+    else if (GetAsyncKeyState('D') & 0x8000)
+    {
+        input = 'd';
+    }
     else if (GetAsyncKeyState(VK_SPACE) & 0x8000)
     {
         input = ' ';
