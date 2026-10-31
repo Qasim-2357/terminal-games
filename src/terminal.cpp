@@ -152,20 +152,53 @@ char Session::pollInput(bool started, bool gameOver, bool& pauseKeyWasDown)
 {
     char input = '\0';
 #ifdef _WIN32
-    if (!started)
+    if (started && (GetAsyncKeyState('W') & 0x8000))
     {
-        if (GetAsyncKeyState('M') & 0x8000)
-        {
-            input = 'm';
-        }
-        else if (GetAsyncKeyState('Q') & 0x8000)
-        {
-            input = 'q';
-        }
-        else if (_kbhit())
+        input = 'w';
+    }
+    else if (started && (GetAsyncKeyState('S') & 0x8000))
+    {
+        input = 's';
+    }
+    else if (started && (GetAsyncKeyState('A') & 0x8000))
+    {
+        input = 'a';
+    }
+    else if (started && (GetAsyncKeyState('D') & 0x8000))
+    {
+        input = 'd';
+    }
+    else if (!started)
+    {
+        if (_kbhit())
         {
             const int key = _getch();
-            input = static_cast<char>(key == 0 || key == 224 ? 'x' : key);
+            if (key == 0 || key == 224)
+            {
+                if (_kbhit())
+                {
+                    _getch();
+                }
+            }
+            else
+            {
+                input = static_cast<char>(key);
+            }
+        }
+    }
+    else if (_kbhit())
+    {
+        const int key = _getch();
+        if (key == 0 || key == 224)
+        {
+            if (_kbhit())
+            {
+                _getch();
+            }
+        }
+        else
+        {
+            input = static_cast<char>(key);
         }
     }
     else if (GetAsyncKeyState('M') & 0x8000)
@@ -191,10 +224,6 @@ char Session::pollInput(bool started, bool gameOver, bool& pauseKeyWasDown)
     else if (GetAsyncKeyState('D') & 0x8000)
     {
         input = 'd';
-    }
-    else if (GetAsyncKeyState(VK_SPACE) & 0x8000)
-    {
-        input = ' ';
     }
     else if (gameOver && (GetAsyncKeyState('R') & 0x8000))
     {

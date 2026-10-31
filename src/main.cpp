@@ -1,5 +1,6 @@
 #include <iostream>
 #include <fstream>
+#include <limits>
 #include <string>
 #include <algorithm>
 #include "racer.h"
@@ -69,6 +70,8 @@ int main()
 
         if (choice == '1')
         {
+            std::cin.ignore((std::numeric_limits<std::streamsize>::max)(),
+                            '\n');
             if (!runTerminalRacer(bestScore))
             {
                 choice = 'q';
@@ -80,7 +83,9 @@ int main()
         }
         else if (choice == '2')
         {
-            if (!runSnake(bestScore))
+            std::cin.ignore((std::numeric_limits<std::streamsize>::max)(),
+                            '\n');
+            if (!runSnake())
             {
                 choice = 'q';
             }
